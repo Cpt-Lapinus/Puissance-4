@@ -1,4 +1,4 @@
-import numpy as np
+_import numpy as np_
 import random
 import pygame
 import sys
