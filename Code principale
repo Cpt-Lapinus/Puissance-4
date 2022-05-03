@@ -1,0 +1,314 @@
+import numpy as np
+import random
+import pygame
+import sys
+import math
+
+taille_ligne = 6
+taille_colonne = 7
+joueur = 0
+IA = 1
+piece_joueur = 1
+piece_IA = 2
+taille_boites = 4
+
+def nouvelle_grille():
+	grille = np.zeros((taille_ligne,taille_colonne))
+	return grille
+
+def jouer_coup(grille, ligne, col, piece):
+	grille[ligne][col] = piece
+
+ 
+def coup_legal(grille, col):
+	return grille[taille_ligne-1][col] == 0
+
+
+def premiere_ligne_libre(grille, col):
+	for r in range(taille_ligne):
+		if grille[r][col] == 0:
+			return r
+
+def print_grille(grille):
+	print(np.flip(grille, 0))
+
+
+def coup_gagnant(grille, piece):
+	# On regarde sur toutes les lignes si 4 pieces du joueur s'alignent
+	for c in range(taille_colonne-3):
+		for r in range(taille_ligne):
+			if grille[r][c] == piece and grille[r][c+1] == piece and grille[r][c+2] == piece and grille[r][c+3] == piece:
+				return True
+
+	# On regarde sur toutes les colonnes si 4 pieces du joueur s'alignent
+	for c in range(taille_colonne):
+		for r in range(taille_ligne-3):
+			if grille[r][c] == piece and grille[r+1][c] == piece and grille[r+2][c] == piece and grille[r+3][c] == piece:
+				return True
+
+	# On regarde sur toutes les diagonales ascendantes si 4 pieces du joueur s'alignent
+	for c in range(taille_colonne-3):
+		for r in range(taille_ligne-3):
+			if grille[r][c] == piece and grille[r+1][c+1] == piece and grille[r+2][c+2] == piece and grille[r+3][c+3] == piece:
+				return True
+
+	# On regarde sur toutes les diagonales descendantes si 4 pieces du joueur s'alignent
+	for c in range(taille_colonne-3):
+		for r in range(3, taille_ligne):
+			if grille[r][c] == piece and grille[r-1][c+1] == piece and grille[r-2][c+2] == piece and grille[r-3][c+3] == piece:
+				return True
+
+
+
+
+Bleu = (0,0,255)
+Noir = (0,0,0)
+Rouge = (255,0,0)
+Jaune = (255,255,0)
+
+
+
+#Le but est maintenant d'écrire un algorithme minimax, pour cela il faut accorder à chaque position un score. Cela se fait de manière arbitraire selon des critères que l'on choisi et que l'on peut modifier
+#De manière générale, on va considérer des boites d'une longueur 4 (colonnes, lignes, diagonales) et on va chercher s'il y a 2, 3 ou 4 jetons du joueur considéré dans cette boite (et aucun de l'autre joueur)
+
+def score_boite(boite, piece):
+	score = 0
+	piece_adv = piece_joueur
+	if piece == piece_joueur:
+		piece_adv = piece_IA
+	 #On regarde qui vient de jouer
+
+	if boite.count(piece) == 4: #Si ce coup nous donne 4 à la suite, on veut un score qui écrase les autres car il est toujours optimal (car gagnant)
+		score += 100
+	elif boite.count(piece) == 3 and boite.count(0) == 1: #Si ce coup nous donne 3 dans la boite sans pieces adverse, on veut un score élevé car le coup est intéressant
+		score += 5
+	elif boite.count(piece) == 2 and boite.count(0) == 2: #Si ce coup nous donne 2 dans la boite sans pieces adverse, on veut un score faible car le coup est intéressant mais pas gagnant
+		score += 2
+
+	if boite.count(piece_adv) == 3 and boite.count(0) == 1: #L'IA doit aussi avoir une stratégie défensive et bloquer 3 pieces à la suite adverse 
+		score -= 4
+
+	return score
+
+#Maintenant, on veut trouver le score de toute une grille, pour cela on va parcourir toutes les "boites" de longueur 4 dans la grille
+
+def score_grille(grille, piece):
+	score = 0
+
+	## On accorde de la valeur au fait d'être au centre de la grille
+	centre_grille = [int(i) for i in list(grille[:, taille_colonne//2])]
+	pieces_centrales = centre_grille.count(piece)
+	score += pieces_centrales * 3
+
+	## On parcours toutes les "boites" horizontales
+	for r in range(taille_ligne):
+		ligne = [int(i) for i in list(grille[r,:])]
+		for c in range(taille_colonne-3):
+			boite = ligne[c:c+taille_boites]
+			score += score_boite(boite, piece)
+
+	## Idem pour les boites verticales
+	for c in range(taille_colonne):
+		colonne = [int(i) for i in list(grille[:,c])]
+		for r in range(taille_ligne-3):
+			boite = colonne[r:r+taille_boites]
+			score += score_boite(boite, piece)
+
+	## Et pour les boite diagonales, orientées dans les deux sens
+	for r in range(taille_ligne-3):
+		for c in range(taille_colonne-3):
+			boite = [grille[r+i][c+i] for i in range(taille_boites)]
+			score += score_boite(boite, piece)
+
+	for r in range(taille_ligne-3):
+		for c in range(taille_colonne-3):
+			boite = [grille[r+3-i][c+i] for i in range(taille_boites)]
+			score += score_boite(boite, piece)
+
+	return score
+
+
+#Maintenant que le score de toute position est défini, on peut écrire l'agorithme minimax. Pour cela, il faut tout d'abord écrire une fonction qui vérifie si la partie est terminée (autrement dit si on a atteint un
+#noeud terminal de notre arbre, ce qui correspondra à l'initialisation de la fonction récursive minimax)
+
+def est_noeud_terminal(grille):
+	return coup_gagnant(grille, piece_joueur) or coup_gagnant(grille, piece_IA) or len(obt_coup_legaux(grille)) == 0
+
+def minimax(grille, profondeur, alpha, beta, joueur_maximisant):
+	coup_legaux = obt_coup_legaux(grille)
+	est_terminal = est_noeud_terminal(grille) 
+	if profondeur == 0 or est_terminal: #On teste si la partie est finie ou si on a atteint la profondeur maximale que l'on a choisi
+		if est_terminal:
+			if coup_gagnant(grille, piece_IA): #Si le coup à fait gagner l'IA, on retourne un score assez grand pour qu'il soit toujours choisi
+				return (None, 100000000000000)
+			elif coup_gagnant(grille, piece_joueur): #Si le coup à fait gagner le joueur, on retourne un score assez faible pour qu'il ne soit jamais choisi
+				return (None, -10000000000000)
+			else: # Il n'y a plus de coups possibles et personne n'a gagné, il y a égalité
+				return (None, 0)
+		else: # Profondeur = 0
+			return (None, score_grille(grille, piece_IA))
+	if joueur_maximisant: #Tour du joueur maximisant
+		valeur = -math.inf
+		colonne = random.choice(coup_legaux)
+		
+		for col in coup_legaux: #On regarde tous les coups qu'il peut faire, puis on va les jouer sur un nouvelle grille pour pouvoir revenir en arrière
+			ligne = premiere_ligne_libre(grille, col)
+			g_copy = grille.copy()
+			jouer_coup(g_copy, ligne, col, piece_IA)
+			nouveau_score = minimax(g_copy, profondeur-1, alpha, beta, False)[1] #une fois le coup joué, on regarde le score attribué à ce coup grâce à un nouvel appel de la fonction minimax
+			                                                                     #On doit alors mettre à jour la profondeur et le joueur maximisant
+			if nouveau_score > valeur:
+				valeur = nouveau_score
+				colonne = col
+			alpha = max(alpha, valeur)
+			if alpha >= beta: #élagage alpha-beta pour optimiser l'algorithme
+				break
+		return colonne, valeur #On ne retient que le coup qui a donné le meilleur score au joueur maximisant, et on renvoi ce score et la colonne (donc le coup) qui donne ce score
+
+	else: # Joueur Minimisant : on fait la meme chose, mais cette fois-ci on ne retient que le coup qui minimise le score de ce joueur
+		valeur = math.inf
+		colonne = random.choice(coup_legaux)
+		for col in coup_legaux:
+			ligne = premiere_ligne_libre(grille, col)
+			g_copy = grille.copy()
+			jouer_coup(g_copy, ligne, col, piece_joueur)
+			nouveau_score = minimax(g_copy, profondeur-1, alpha, beta, True)[1]
+			if nouveau_score < valeur:
+				valeur = nouveau_score
+				colonne = col
+			beta = min(beta, valeur)
+			if alpha >= beta:
+				break
+		return colonne, valeur
+
+def obt_coup_legaux(grille):
+	coup_legaux = []
+	for col in range(taille_colonne):
+		if coup_legal(grille, col):
+			coup_legaux.append(col)
+	return coup_legaux
+
+def meilleur_coup(grille, piece):
+
+	coup_legaux = obt_coup_legaux(grille)
+	meilleur_score = -10000
+	meilleur_col = random.choice(coup_legaux)
+	for col in coup_legaux:
+		ligne = premiere_ligne_libre(grille, col)
+		grille_temporaire = grille.copy()
+		jouer_coup(grille_temporaire, ligne, col, piece)
+		score = score_grille(grille_temporaire, piece)
+		if score > meilleur_score:
+			meilleur_score = score
+			meilleur_col = col
+
+	return meilleur_col
+
+
+cote_carre = 100
+rayon = int(cote_carre /2 - 5)
+largeur = taille_colonne * cote_carre 
+hauteur = (taille_ligne+1) * cote_carre 
+taille_jeu = (largeur, hauteur)
+
+
+def dessine_grille(grille):
+	# On remplie méthodiquement un rectangle en fond bleu au sein duquel on ajoute un cercle 
+	for c in range(taille_colonne):
+	    for r in range(taille_ligne):
+		    pygame.draw.rect(ecran, Bleu, (c*cote_carre , (r+1)*cote_carre, cote_carre , cote_carre ))
+		    pygame.draw.circle(ecran, Noir, (int(c*cote_carre +cote_carre /2), int((r+1)*cote_carre +cote_carre /2)), rayon)
+	 
+	 #On colorie les piece posé par le joueur 1 en rouge et celle par le joueur 2 en jaune 
+	
+	for c in range(taille_colonne):
+		for r in range(taille_ligne):		
+			if grille[r][c] == 1:
+				pygame.draw.circle(ecran, Rouge, (int(c*cote_carre +cote_carre /2), hauteur-int(r*cote_carre +cote_carre /2)), rayon)
+			elif grille[r][c] == 2: 
+				pygame.draw.circle(ecran, Jaune, (int(c*cote_carre +cote_carre /2), hauteur-int(r*cote_carre +cote_carre /2)), rayon)
+	pygame.display.update()
+
+	
+grille = nouvelle_grille()
+print_grille(grille)
+game_over = False
+tour = random.randint(joueur, IA)
+
+#Variables pygame que je ne comprends absolument pas : 
+
+pygame.init()
+
+ecran = pygame.display.set_mode(taille_jeu)
+dessine_grille(grille)
+pygame.display.update()
+
+police_aff_gagnant = pygame.freetype.SysFont('Times New Roman', 75)
+
+
+
+
+
+while not game_over:
+
+#Partie pygame d'affichage que je ne comprend pas
+	for event in pygame.event.get():
+		if event.type == pygame.QUIT:
+			sys.exit()
+
+		if event.type == pygame.MOUSEMOTION:
+			pygame.draw.rect(ecran, Noir, (0,0,largeur, cote_carre ))
+			posx = event.pos[0]
+			if tour == 0:
+				pygame.draw.circle(ecran, Rouge, (posx, int(cote_carre /2)), rayon)
+			else: 
+				pygame.draw.circle(ecran, Jaune, (posx, int(cote_carre /2)), rayon)
+		pygame.display.update()
+
+
+
+		if event.type == pygame.MOUSEBUTTONDOWN:
+			pygame.draw.rect(ecran, Noir, (0,0, largeur, cote_carre ))
+			# Si c'est au tour du joueur 1, on demande un input
+			if tour == 0:
+				posx = event.pos[0]
+				col = int(math.floor(posx/cote_carre )) #le joueur indique la colonne qu'il souhaite jouer
+
+				if coup_legal(grille, col): #on teste si le coup est légal
+					ligne = premiere_ligne_libre(grille, col) #Si oui, on joue la ligne correspondant à la colonne
+					jouer_coup(grille, ligne, col, 1)
+
+					if coup_gagnant(grille, 1): 
+						label = police_aff_gagnant.render("Le joueur 1 a gagné!!", 1, Rouge)
+						ecran.blit(label, (40,10))
+						game_over = True #Si le coup a été gagnant, on s'arrête la
+					tour += 1
+					tour = tour % 2
+
+					print_grille(grille)
+					dessine_grille(grille)
+
+
+	# # Jeux du joueur 2 : 
+	if tour == IA and not game_over:				
+
+
+		col, minimax_score = minimax(grille, 5, -math.inf, math.inf, True)
+
+		if coup_legal(grille, col):
+			ligne = premiere_ligne_libre(grille, col)
+			jouer_coup(grille, ligne, col, piece_IA)
+
+			if coup_gagnant(grille, piece_IA):
+				label = police_aff_gagnant.render("Le Joueur 2 a gagné!!", 1, Jaune)
+				ecran.blit(label, (40,10))
+				game_over = True
+
+			print_grille(grille)
+			dessine_grille(grille)
+
+			tour += 1
+			tour = tour % 2
+
+	if game_over:
+		pygame.time.wait(3000) 
